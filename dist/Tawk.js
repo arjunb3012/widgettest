@@ -1,4 +1,4 @@
-export class Tawk {
+class Tawk {
     constructor({ position = 'bottom-right'}) {
         this.position = this.getPosition(position);
         this.open = false;
