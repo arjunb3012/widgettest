@@ -1,6 +1,6 @@
 class Tawk {
-    constructor() {
-        this.position = this.getPosition("bottom-right");
+    constructor({ position = 'bottom-right'}) {
+        this.position = this.getPosition(position);
         this.open = false;
         this.initialise();
         this.createStyles();
