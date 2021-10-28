@@ -50,9 +50,9 @@ class Tawk {
     createMessageContainerContent() {
         this.messageContainer.innerHTML = '';
         const ifrm = document.createElement("iframe");
-        ifrm.setAttribute("src", "https://feedback.trycasa.app/");
-        ifrm.style.width = "100%";
-        ifrm.style.height = "100%";
+        ifrm.setAttribute("src", "https://community.trycasa.app/");
+        ifrm.style.width = "1000px";
+        ifrm.style.height = "480px";
         ifrm.frameBorder = "0";
         this.messageContainer.appendChild(ifrm);
 
