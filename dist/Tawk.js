@@ -1,262 +1,161 @@
-var upvoty = {
-    debug: false,
-    error: false,
-    //
-    preventScrollEvent: false,
-    //
-    boardHash: null,
-    postHash: null,
-    userHash: null,
-    settings: {},
-    iframe: null,
-    counters: {send: 1, receive: 1},
-
-    init: function (type, settings) {
-        if (type == 'identify') {
-            try {
-                upvoty.settings = this.setSettings(settings);
-
-                var idfy = new XMLHttpRequest;
-                idfy.open('POST', 'https://' + upvoty.settings.baseUrl + '/front/handleExternalLogin/', !0);
-                idfy.withCredentials = !0;
-                formData = new FormData();
-                formData.append('userData', JSON.stringify(settings));
-                idfy.send(formData);
-                //
-                idfy.onload = function () {
-                    if (idfy.status != 200) {
-                        console.log('Response-Error (' + idfy.status + ') Upvoty identify: ' + idfy.responseText);
-                    }
-                };
-                idfy.onerror = function (e) {
-                    e.preventDefault();
-                };
-            } catch (e) {
-                console.log('Error Upvoty identify: ' + e.message);
-            }
-
-        } else if (type == 'render') {
-            upvoty.settings = this.setSettings(settings);
-            if (upvoty.error) {
-                console.log('Error initializing widget');
-                return false;
-            }
-            //
-            var is_safari = navigator.userAgent.indexOf('Safari') > -1;
-            var is_chrome = navigator.userAgent.indexOf('Chrome') > -1;
-            if ((is_chrome) && (is_safari)) {
-                is_safari = false;
-            }
-            if (is_safari) {
-                if (!document.cookie.match(/^(.*;)?\s*fixed\s*=\s*[^;]+(.*)?$/)) {
-                    document.cookie = 'fixed=fixed; expires=Tue, 19 Jan 2038 03:14:07 UTC; path=/';
-                    window.location.replace('https://' + upvoty.settings.baseUrl + '/widget-fix-iframe-3rd.html');
-                }
-                window.addEventListener('touchstart', {});
-                window.addEventListener('touchend', {});
-            }
-            //
-            var d = document.querySelectorAll('div[data-upvoty]')[0];
-            upvoty.iframe = document.createElement('iframe');
-            //
-            upvoty.iframe.name = 'ifr_upvoty';
-            upvoty.iframe.width = '100%';
-            upvoty.iframe.height = '800px';
-            upvoty.iframe.id = 'upvoty-iframe';//+upvoty.settings.id;
-            upvoty.iframe.allowtransparency = true;
-            upvoty.iframe.style.border = '0';
-
-            upvoty.settings.originHref = window.location.href;
-
-            var fixedLayout = 'roadmap';
-
-            if (upvoty.listeners()) {
-                upvoty.iframe.referrerPolicy = 'origin';
-                upvoty.iframe.sandbox = 'allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation allow-top-navigation-by-user-activation allow-modals';
-                //
-                if (is_safari) {
-                    upvoty.iframe.sandbox = 'allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation allow-top-navigation-by-user-activation allow-modals';
-                }
-                upvoty.iframe.src = 'https://' + upvoty.settings.baseUrl + '/front/iframe/';
-                if (upvoty.settings.startPage == 'changelog') {
-                    upvoty.iframe.src += 'changelog/';
-                    fixedLayout = null;
-                }
-                if (upvoty.settings.startPage == 'roadmap') {
-                    upvoty.iframe.src += 'roadmap/';
-                }
-                if (upvoty.settings.startPage == 'feedbackWidget') {
-                    fixedLayout = 'widget';
-                }
-                if (upvoty.settings.boardHash !== undefined) {
-                    upvoty.iframe.src += upvoty.settings.boardHash + '/';
-                    fixedLayout = 'board';
-                }
-
-                if (fixedLayout != null) {
-                    upvoty.iframe.src += '?fixedLayout=' + fixedLayout;
-                }
-                if (upvoty.settings.ssoToken != undefined && upvoty.settings.ssoToken != null) {
-                    upvoty.iframe.src += '&loginMethod=sso';
-                }
-                if (upvoty.settings.extension != undefined && upvoty.settings.extension != null) {
-                    upvoty.iframe.src += '&widgetExtension=' + upvoty.settings.extension;
-                }
-
-                if (window.location.search !== '') {
-                    var url = new URL(window.location.href);
-                    var loginToken = url.searchParams.get("__loginToken");
-                    if (loginToken !== null) {
-                        upvoty.iframe.src += '&loginToken=' + loginToken;
-                    }
-                }
-
-
-                upvoty.bindEvent(upvoty.iframe, 'beforeunload', upvoty.destroy);
-                upvoty.bindEvent(upvoty.iframe, 'unload', upvoty.destroy);
-                d.appendChild(upvoty.iframe);
-            }
-        }
-    },
-    destroy: function () {
-        try {
-            upvoty.unbindEvent(window, 'message', upvoty.func_trigger_message);
-            upvoty.unbindEvent(upvoty.iframe, 'load', upvoty.func_trigger_load);
-            upvoty.unbindEvent(window, 'resize', upvoty.func_trigger_resize);
-            upvoty.unbindEvent(upvoty.elmScrollTrigger, 'scroll', upvoty.func_trigger_scroll);
-            upvoty.iframe.remove();
-        } catch (e) {
-            //console.log('Error Upvoty destroy: ' + e.message);
-        }
-    },
-    setSettings: function (settings) {
-        if (settings.baseUrl == undefined) {
-            upvoty.error = true;
-            console.log('Error: baseUrl not set');
-        }
-        if (settings.offsetTop == undefined) {
-            settings.offsetTop = 100;
-        }
-        if (settings.offsetBottom == undefined) {
-            settings.offsetBottom = 40;
-        }
-        if (settings.startPage == undefined) {
-            settings.startPage = 'board';
-        }
-        if (settings.id == undefined) {
-            settings.id = '1';
-        }
-        return settings;
-    },
-
-    sendMessage: function (inputData) {
-        if (upvoty.debug) console.log(['PARENT-SEND:' + upvoty.counters.send++, inputData]);
-        upvoty.iframe.contentWindow.postMessage(JSON.stringify(inputData), '*');
-    },
-
-    bindEvent: function (element, eventName, eventHandler) {
-        if (element.addEventListener) {
-            element.addEventListener(eventName, eventHandler, false);
-        } else if (element.attachEvent) {
-            element.attachEvent('on' + eventName, eventHandler);
-        }
-        //console.log(['Upvoty bindEvent:' + eventName, element, eventHandler]);
-    },
-    unbindEvent: function (element, eventName, eventHandler) {
-        if (element.removeEventListener) {
-            element.removeEventListener(eventName, eventHandler, false);
-        } else if (element.detachEvent) {
-            element.detachEvent('on' + eventName, eventHandler);
-        }
-        //console.log(['Upvoty unbindEvent:' + eventName, element, eventHandler]);
-    },
-    elmScrollTrigger: window,
-    listeners: function () {
-        try {
-            upvoty.bindEvent(window, 'message', upvoty.func_trigger_message);
-            var elem = null;
-            if (elem = document.getElementById('feedback')) {
-                var children = elem.childNodes;
-                for (var i = 0; i < children.length; i++) {
-                    if (children[i].className && children[i].className.split(' ').indexOf('section-body') >= 0) {
-                        upvoty.elmScrollTrigger = children[i];
-                        break;
-                    }
-                }
-            }
-            upvoty.bindEvent(upvoty.elmScrollTrigger, 'scroll', upvoty.func_trigger_scroll);
-            upvoty.bindEvent(window, 'resize', upvoty.func_trigger_resize);
-            upvoty.bindEvent(upvoty.iframe, 'load', upvoty.func_trigger_load);
-            //
-            return true;
-        } catch (e) {
-            console.log('Error Upvoty listeners: ' + e.message);
-        }
-        return false;
-    },
-
-    /********** events ******/
-    func_trigger_message: function (e) {
-        if (e.data !== undefined) {
-            var inputData = {};
-            try {
-                inputData = JSON.parse(e.data);
-                if (upvoty.debug) console.log(['PARENT-RECIEVE:' + upvoty.counters.receive++, [inputData.method, inputData]]);
-                if (inputData.method == 'init') {
-                    var inputData = {
-                        'method': 'settings',
-                        data: upvoty.settings
-                    };
-                    upvoty.sendMessage(inputData);
-                } else if (inputData.action == 'dimensions') {
-                    //upvoty.iframe.width = inputData.document.width;
-                    upvoty.iframe.height = inputData.document.height + 4;
-                } else if (inputData.action == 'resetScroll') {
-                    if (!upvoty.preventScrollEvent) {
-                        upvoty.preventScrollEvent = true;
-                        if (window.scrollY > 0 && upvoty.iframe.getBoundingClientRect().top < 0) {
-                            var gotoPos = ((window.scrollY > 0 && upvoty.iframe.getBoundingClientRect().top < 0) ? (upvoty.iframe.getBoundingClientRect().top + window.scrollY - upvoty.settings.offsetTop) : 0);
-                            if (gotoPos > 0) {
-                                window.scrollTo(0, gotoPos);
-                            }
-                        }
-                        setTimeout(function () {
-                            upvoty.preventScrollEvent = false;
-                        }, 250);
-                    }
-                } else if (inputData.action == 'doScroll') {
-                    if (!upvoty.preventScrollEvent) {
-                        upvoty.preventScrollEvent = true;
-                        var newTop = inputData.top;
-                        if (window.scrollY > 0 && ((newTop + upvoty.iframe.getBoundingClientRect().top) != window.scrollY)) {
-                            var gotoPos = newTop + ((window.scrollY > 0 && upvoty.iframe.getBoundingClientRect().top < 0) ? (upvoty.iframe.getBoundingClientRect().top + window.scrollY - upvoty.settings.offsetTop) : 0);
-                            if (gotoPos > 0) {
-                                window.scrollTo(0, gotoPos);
-                            }
-                        }
-                        setTimeout(function () {
-                            upvoty.preventScrollEvent = false;
-                        }, 250);
-                    }
-                }
-            } catch (x) {
-            }
-        }
-    },
-    func_trigger_scroll: function (e) {
-        if (!upvoty.preventScrollEvent) {
-            upvoty.sendMessage({
-                event: 'scrolled',
-                offsetWindow: window.scrollY,
-                offsetElement: upvoty.iframe.getBoundingClientRect().top + window.pageYOffset,
-                endOfPage: (upvoty.elmScrollTrigger == window && (document.body.scrollHeight - window.scrollY - upvoty.settings.offsetBottom) <= window.innerHeight) || ((upvoty.iframe.getBoundingClientRect().bottom - upvoty.settings.offsetBottom) <= window.innerHeight),
-            });
-        }
-    },
-    func_trigger_resize: function () {
-        upvoty.sendMessage({event: 'resized'});
-    },
-    func_trigger_load: function () {
-        upvoty.sendMessage({event: 'loaded'});
+class Tawk {
+    constructor({ position = 'bottom-right'}) {
+        this.position = this.getPosition(position);
+        this.open = false;
+        this.initialise();
+        this.createStyles();
     }
-};
+
+    getPosition(position) {
+        const [vertical, horizontal] = position.split('-');
+        return {
+            [vertical]: '30px',
+            [horizontal]: '30px',
+        };
+    }
+    
+    initialise() {
+        const container = document.createElement('div');
+        container.style.position = 'fixed';
+        Object.keys(this.position)
+            .forEach(key => container.style[key] = this.position[key]);
+        document.body.appendChild(container);
+
+        const buttonContainer = document.createElement('div');
+        buttonContainer.classList.add('button-container')
+
+        const chatIcon = document.createElement('img');
+        chatIcon.src = 'assets/chat.svg';
+        chatIcon.classList.add('icon');
+        this.chatIcon = chatIcon;
+
+        const closeIcon = document.createElement('img');
+        closeIcon.src = 'assets/cross.svg';
+        closeIcon.classList.add('icon', 'hidden');
+        this.closeIcon = closeIcon;
+
+        buttonContainer.appendChild(this.chatIcon);
+        buttonContainer.appendChild(this.closeIcon);
+        buttonContainer.addEventListener('click', this.toggleOpen.bind(this));
+
+        this.messageContainer = document.createElement('div');
+        this.messageContainer.classList.add('hidden', 'message-container');
+        
+        this.createMessageContainerContent();
+
+        container.appendChild(this.messageContainer);
+        container.appendChild(buttonContainer);
+    }
+
+    createMessageContainerContent() {
+        this.messageContainer.innerHTML = '';
+        const ifrm = document.createElement("iframe");
+        ifrm.setAttribute("src", "https://feedback.trycasa.app/");
+        ifrm.style.width = "1000px";
+        ifrm.style.height = "480px";
+        ifrm.frameBorder = "0";
+        this.messageContainer.appendChild(ifrm);
+
+    }
+
+    createStyles() {
+        const styleTag = document.createElement('style');
+        styleTag.innerHTML = `
+            .icon {
+                cursor: pointer;
+                width: 70%;
+                position: absolute;
+                top: 9px;
+                left: 9px;
+                transition: transform .3s ease;
+            }
+            .hidden {
+                transform: scale(0);
+            }
+            .button-container {
+                background-color: #04b73f;
+                width: 60px;
+                height: 60px;
+                border-radius: 50%;
+            }
+            .message-container {
+                box-shadow: 0 0 18px 8px rgba(0, 0, 0, 0.1), 0 0 32px 32px rgba(0, 0, 0, 0.08);
+                width: 1000px;
+                right: -25px;
+                bottom: 75px;
+                max-height: 1000px;
+                position: absolute;
+                transition: max-height .2s ease;
+                font-family: Helvetica, Arial ,sans-serif;
+            }
+            .message-container.hidden {
+                max-height: 0px;
+            }
+            .message-container h2 {
+                margin: 0;
+                padding: 20px 20px;
+                color: #fff;
+                background-color: #04b73f;
+            }
+            .message-container .content {
+                margin: 20px 10px ;
+                border: 1px solid #dbdbdb;
+                padding: 10px;
+                display: flex;
+                background-color: #fff;
+                flex-direction: column;
+            }
+            .message-container form * {
+                margin: 5px 0;
+            }
+            .message-container form input {
+                padding: 10px;
+            }
+            .message-container form textarea {
+                height: 300px;
+                padding: 10px;
+            }
+            .message-container form textarea::placeholder {
+                font-family: Helvetica, Arial ,sans-serif;
+            }
+            .message-container form button {
+                cursor: pointer;
+                background-color: #04b73f;
+                color: #fff;
+                border: 0;
+                border-radius: 4px;
+                padding: 10px;
+            }
+            .message-container form button:hover {
+                background-color: #16632f;
+            }
+        `.replace(/^\s+|\n/gm, '');
+        document.head.appendChild(styleTag);
+    }
+
+    toggleOpen() {
+        this.open = !this.open;
+        if (this.open) {
+            this.chatIcon.classList.add('hidden');
+            this.closeIcon.classList.remove('hidden');
+            this.messageContainer.classList.remove('hidden');
+        } else {
+            this.createMessageContainerContent();
+            this.chatIcon.classList.remove('hidden');
+            this.closeIcon.classList.add('hidden');
+            this.messageContainer.classList.add('hidden');
+        }
+    }
+
+    submit(event) {
+        event.preventDefault();
+        const formSubmission = {
+            email: event.srcElement.querySelector('#email').value, 
+            message: event.srcElement.querySelector('#message').value,
+        };
+
+        this.messageContainer.innerHTML = '<h2>Thanks for your submission.</h2><p class="content">Someone will be in touch with your shortly regarding your enquiry';
+        
+        console.log(formSubmission);
+    }
+}
